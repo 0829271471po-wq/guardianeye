@@ -154,6 +154,7 @@ class FallDetector:
 
     การเปลี่ยนสถานะ:
       NORMAL         → FALL_SUSPECTED : ตกเร็ว และ (มุม > 60° หรือ กว้าง/สูง > 1)
+                                        หรือ อยู่ในแนวนอนต่อเนื่องนานเกิน LONG_LIE_SECONDS (กฎสำรอง)
       FALL_SUSPECTED → NORMAL         : ลุกขึ้นได้ก่อนครบเวลา (เช่น แค่ก้มเก็บของ)
       FALL_SUSPECTED → FALL_CONFIRMED : ยังนอนอยู่ครบ LYING_SECONDS
       FALL_CONFIRMED → NORMAL         : ลุกขึ้นแล้ว
@@ -169,6 +170,7 @@ class FallDetector:
         self.last_metrics = None         # ค่าล่าสุด เอาไว้แสดงบนจอ
         self.hip_drop = 0.0              # สะโพกตกไปเท่าไรในช่วง VELOCITY_WINDOW
         self.last_fast_drop = -1e9       # เวลาล่าสุดที่ตรวจพบว่าสะโพกตกเร็ว
+        self.horizontal_since = None     # เวลาที่เริ่มอยู่ในแนวนอนต่อเนื่อง (ใช้กฎสำรอง "นอนนิ่งนานเกิน")
 
     def _is_horizontal(self, m):
         """ตัวอยู่ในแนวนอนหรือไม่"""
@@ -180,9 +182,15 @@ class FallDetector:
         y มากขึ้น = ต่ำลงในภาพ ดังนั้น ตกลง = hip_y ปัจจุบัน - hip_y ที่สูงที่สุดในช่วงนั้น
         """
         self.hip_history.append((now, hip_y))
-        # ทิ้งข้อมูลที่เก่ากว่าช่วงเวลาที่สนใจ
-        while self.hip_history and now - self.hip_history[0][0] > config.VELOCITY_WINDOW:
+        # ทิ้งข้อมูลที่เก่ากว่าช่วงเวลาที่สนใจ แต่เก็บ "ภาพก่อนหน้า 1 ภาพ" ไว้เสมอ
+        # (ตอนกล้องกระตุก ภาพมาห่างกันเกิน VELOCITY_WINDOW ถ้าทิ้งหมดจะไม่มีอะไรให้เทียบ → มองไม่เห็นการตก)
+        while len(self.hip_history) > 1 and now - self.hip_history[1][0] >= config.VELOCITY_WINDOW:
             self.hip_history.popleft()
+        # แต่ถ้าภาพก่อนหน้าเก่าเกิน MAX_FRAME_GAP (เช่น คนเพิ่งกลับเข้าภาพ) ไม่ใช้เทียบ
+        if now - self.hip_history[0][0] > config.MAX_FRAME_GAP:
+            self.hip_history.popleft()
+        if not self.hip_history:
+            self.hip_history.append((now, hip_y))
         highest = min(y for _, y in self.hip_history)
         self.hip_drop = hip_y - highest
 
@@ -200,6 +208,7 @@ class FallDetector:
             if self.last_seen_person is not None and now - self.last_seen_person > config.NO_PERSON_TOLERANCE:
                 # หายไปนานแล้ว → ล้างข้อมูล กลับสู่ปกติ (เช่น คนเดินออกจากกล้อง)
                 self.hip_history.clear()
+                self.horizontal_since = None
                 if self.state == FALL_SUSPECTED:
                     self.state = NORMAL
                     self.suspect_start = None
@@ -214,8 +223,12 @@ class FallDetector:
         # จับเวลาว่ากลับมาตั้งตรงต่อเนื่องนานแค่ไหน
         if horizontal:
             self.upright_since = None
-        elif self.upright_since is None:
-            self.upright_since = now
+            if self.horizontal_since is None:
+                self.horizontal_since = now
+        else:
+            self.horizontal_since = None
+            if self.upright_since is None:
+                self.upright_since = now
         recovered = self.upright_since is not None and now - self.upright_since >= config.RECOVER_SECONDS
 
         should_alert = False
@@ -230,6 +243,11 @@ class FallDetector:
                 self.state = FALL_SUSPECTED
                 self.suspect_start = now
                 print("[fall] สงสัยว่าล้ม — เริ่มจับเวลา")
+            # กฎสำรอง: ไม่เห็นจังหวะล้ม (เช่น กล้องกระตุก / เดินเข้าภาพมาตอนนอนอยู่แล้ว) แต่นอนนิ่งนานเกิน
+            elif horizontal and now - self.horizontal_since >= config.LONG_LIE_SECONDS:
+                self.state = FALL_SUSPECTED
+                self.suspect_start = now
+                print(f"[fall] นอนอยู่นานเกิน {config.LONG_LIE_SECONDS} วินาที — สงสัยว่าล้ม เริ่มจับเวลา")
 
         elif self.state == FALL_SUSPECTED:
             if recovered:

@@ -73,7 +73,9 @@ class PersonTracker:
         for pi, person in enumerate(self.people):
             for ci, center in enumerate(centers):
                 distance = math.dist(person.center, center)
-                if distance <= config.TRACK_MATCH_DISTANCE:
+                # ภาพมาห่างกันนาน (กล้องกระตุก) ตัวก็ขยับได้ไกลขึ้น → ยอมให้ห่างได้มากขึ้นตามเวลา
+                gap = now - person.last_seen
+                if distance <= config.TRACK_MATCH_DISTANCE + config.TRACK_SPEED * gap:
                     pairs.append((distance, pi, ci))
         pairs.sort()
         matched_people, matched_poses = set(), set()
