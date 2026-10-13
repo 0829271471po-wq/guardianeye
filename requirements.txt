@@ -1,0 +1,6 @@
+# เวอร์ชันที่ทดสอบแล้วว่าใช้งานได้ (Python 3.11.9)
+opencv-contrib-python==5.0.0.93
+mediapipe==1.1.0
+numpy==2.4.6
+requests==2.34.2
+python-dotenv==1.2.4

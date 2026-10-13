@@ -1,0 +1,20 @@
+# ความลับ — ห้ามขึ้น GitHub
+.env
+
+# virtual environment และไฟล์ชั่วคราวของ Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# ไฟล์โมเดล (ใหญ่ ดาวน์โหลดใหม่ได้ด้วย download_models.py)
+models/*
+!models/.gitkeep
+
+# ข้อมูลส่วนตัว: รูปใบหน้า รูปเหตุการณ์ และ log
+known_faces/*
+!known_faces/.gitkeep
+snapshots/*
+!snapshots/.gitkeep
+logs/*
+!logs/.gitkeep
